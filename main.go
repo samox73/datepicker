@@ -190,7 +190,7 @@ Examples:
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(initialModel())
+	p := tea.NewProgram(initialModel(), tea.WithOutput(os.Stderr))
 	finalModel, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
