@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,9 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	datepicker "github.com/ethanefung/bubble-datepicker"
+	"github.com/muesli/termenv"
 	flag "github.com/spf13/pflag"
 )
 
@@ -23,29 +26,33 @@ type model struct {
 
 // keyMap defines our custom keybindings for help display
 type keyMap struct {
-	Up    key.Binding
-	Down  key.Binding
-	Left  key.Binding
-	Right key.Binding
-	Enter key.Binding
-	Quit  key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Left      key.Binding
+	Right     key.Binding
+	NextMonth key.Binding
+	PrevMonth key.Binding
+	Enter     key.Binding
+	Quit      key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Enter, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.NextMonth, k.PrevMonth, k.Enter, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
+		{k.NextMonth, k.PrevMonth},
 		{k.Enter, k.Quit},
 	}
 }
 
 func initialModel() model {
 	dp := datepicker.New(time.Now())
-	dp.Styles = datepicker.DefaultStyles()
-	dp.SelectDate() // Highlight the current date
+
+	dp.SelectDate()                       // Select today's date initially
+	dp.SetFocus(datepicker.FocusCalendar) // Set focus to calendar for navigation
 
 	return model{
 		datepicker: dp,
@@ -71,6 +78,14 @@ func getKeyMap(dp datepicker.Model) keyMap {
 			key.WithKeys("right", "l"),
 			key.WithHelp("→/l", "right"),
 		),
+		NextMonth: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "next month"),
+		),
+		PrevMonth: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "prev month"),
+		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "select"),
@@ -94,14 +109,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "enter":
-			if m.datepicker.Selected {
-				m.selected = m.datepicker.Time
-				m.quitting = true
-				return m, tea.Quit
-			}
+			// Select the current date and quit
+			m.datepicker.SelectDate()
+			m.selected = m.datepicker.Time
+			m.quitting = true
+			return m, tea.Quit
+		case "n":
+			// Next month
+			newTime := m.datepicker.Time.AddDate(0, 1, 0)
+			m.datepicker.SetTime(newTime)
+			return m, nil
+		case "m":
+			// Previous month
+			newTime := m.datepicker.Time.AddDate(0, -1, 0)
+			m.datepicker.SetTime(newTime)
+			return m, nil
 		}
 	}
 
+	// Let datepicker handle the key for navigation
 	var cmd tea.Cmd
 	m.datepicker, cmd = m.datepicker.Update(msg)
 	return m, cmd
@@ -140,14 +166,14 @@ func validateFormat(format string) error {
 
 	// Check for the common mistake of using 2001 or other years
 	if strings.Contains(format, "2001") || strings.Contains(format, "2002") ||
-	   strings.Contains(format, "2003") || strings.Contains(format, "2004") ||
-	   strings.Contains(format, "2005") || strings.Contains(format, "2007") {
+		strings.Contains(format, "2003") || strings.Contains(format, "2004") ||
+		strings.Contains(format, "2005") || strings.Contains(format, "2007") {
 		return fmt.Errorf("invalid year token in format string. Use '2006' for 4-digit year or '06' for 2-digit year")
 	}
 
 	// Warn about common mistakes (missing year token)
 	if (format != "02.01.2006") &&
-	   (!strings.Contains(format, "2006") && !strings.Contains(format, "06")) {
+		(!strings.Contains(format, "2006") && !strings.Contains(format, "06")) {
 		fmt.Fprintf(os.Stderr, "Warning: Format string doesn't contain year token (2006 or 06)\n")
 	}
 
@@ -155,6 +181,8 @@ func validateFormat(format string) error {
 }
 
 func main() {
+	lipgloss.SetColorProfile(termenv.NewOutput(os.Stderr).Profile)
+
 	// Create a new flag set with just the binary name
 	flags := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
 
@@ -190,7 +218,14 @@ Examples:
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(initialModel(), tea.WithOutput(os.Stderr))
+	// Set up program options - exactly like gum does it
+	opts := []tea.ProgramOption{
+		tea.WithOutput(os.Stderr),             // UI goes to stderr, result goes to stdout
+		tea.WithReportFocus(),                 // UI goes to stderr, result goes to stdout
+		tea.WithContext(context.Background()), // Timeout support
+	}
+
+	p := tea.NewProgram(initialModel(), opts...)
 	finalModel, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
