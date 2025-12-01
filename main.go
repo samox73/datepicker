@@ -142,7 +142,7 @@ func (m model) View() string {
 	helpView := m.help.View(keys)
 
 	return fmt.Sprintf(
-		"\n%s\n\n%s\n",
+		"%s\n%s",
 		m.datepicker.View(),
 		helpView,
 	)
