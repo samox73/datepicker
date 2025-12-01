@@ -1,4 +1,4 @@
-module datepicker
+module github.com/samox73/datepicker
 
 go 1.25.4
 
